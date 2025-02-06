@@ -19,11 +19,40 @@ const TypingIndicator = () => {
         </svg>
       </div>
       <div className="flex space-x-1">
-        <div className="h-3 w-3 animate-bounce rounded-full bg-blue-600" style={{ animationDelay: '0ms' }}></div>
-        <div className="h-3 w-3 animate-bounce rounded-full bg-blue-600" style={{ animationDelay: '150ms' }}></div>
-        <div className="h-3 w-3 animate-bounce rounded-full bg-blue-600" style={{ animationDelay: '300ms' }}></div>
+        <div
+          className="h-3 w-3 rounded-full bg-blue-600"
+          style={{
+            animation: "typingDot 1.4s infinite ease-in-out",
+            animationDelay: "0s"
+          }}
+        ></div>
+        <div
+          className="h-3 w-3 rounded-full bg-blue-600"
+          style={{
+            animation: "typingDot 1.4s infinite ease-in-out",
+            animationDelay: "0.2s"
+          }}
+        ></div>
+        <div
+          className="h-3 w-3 rounded-full bg-blue-600"
+          style={{
+            animation: "typingDot 1.4s infinite ease-in-out",
+            animationDelay: "0.4s"
+          }}
+        ></div>
       </div>
       <span className="text-sm text-gray-500">Vita is typing...</span>
+      {/* Custom keyframes defined inline using styled-jsx */}
+      <style jsx>{`
+        @keyframes typingDot {
+          0%, 80%, 100% {
+            transform: scale(0);
+          }
+          40% {
+            transform: scale(1);
+          }
+        }
+      `}</style>
     </div>
   );
 };

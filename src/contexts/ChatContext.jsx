@@ -4,8 +4,13 @@ import {
   saveConversation, 
   loadConversation, 
   getAllConversations, 
-  deleteConversation 
+  deleteConversation,
+  clearUserData
 } from '../utils/localStorage';
+import { createWorker } from 'tesseract.js';
+import { pdfjs } from 'react-pdf';
+
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 export const ChatContext = createContext();
 
@@ -68,9 +73,28 @@ export const ChatProvider = ({ children }) => {
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [userData, setUserData] = useState(null);
+  const [ocrWorker, setOcrWorker] = useState(null);
 
   useEffect(() => {
     loadConversations();
+  }, []);
+
+  useEffect(() => {
+    const initOCR = async () => {
+      const worker = await createWorker();
+      // With recent versions of Tesseract.js, the worker is pre-loaded
+      // Simply initialize with the language you need.
+      await worker.initialize('eng');
+      setOcrWorker(worker);
+    };
+    initOCR();
+
+    // Terminate the worker when the component unmounts
+    return () => {
+      if (ocrWorker) {
+        ocrWorker.terminate();
+      }
+    };
   }, []);
 
   // Generate a smart title based on message content
@@ -195,7 +219,7 @@ export const ChatProvider = ({ children }) => {
       let conversationTitle;
       
       if (!conversationId) {
-        const { title, category } = generateConversationTitle(message);
+        const { title } = generateConversationTitle(message);
         conversationId = `chat_${Date.now()}`;
         conversationTitle = title;
         setCurrentConversationId(conversationId);
@@ -241,19 +265,88 @@ export const ChatProvider = ({ children }) => {
     }
   };
 
+  const processFileWithOCR = async (file, userPrompt = '') => {
+    try {
+      let extractedText = '';
+
+      if (file.type.startsWith('image/')) {
+        const { data: { text } } = await ocrWorker.recognize(file);
+        extractedText = text;
+      } else if (file.type === 'application/pdf') {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+        
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          extractedText += textContent.items.map(item => item.str).join(' ') + '\n';
+        }
+      }
+
+      if (extractedText) {
+        // Construct prompt with extracted text and user's prompt
+        const prompt = userPrompt 
+          ? `Based on this text: "${extractedText}", ${userPrompt}`
+          : `Analyze this text and provide relevant health insights: "${extractedText}"`;
+
+        // Send to AI for processing
+        const response = await sendMessageToGemini(prompt);
+        
+        // Add both the file and AI's response to the conversation
+        const newMessage = {
+          id: Date.now(),
+          text: response,
+          timestamp: new Date().toISOString(),
+          isUser: false,
+          files: [{
+            name: file.name,
+            type: file.type,
+            size: file.size
+          }]
+        };
+
+        setConversation(prev => [...prev, newMessage]);
+        saveConversation(currentConversationId, [...conversation, newMessage]);
+      }
+    } catch (error) {
+      console.error('Error processing file:', error);
+      setConversation(prev => [
+        ...prev,
+        {
+          id: Date.now(),
+          text: 'Sorry, I had trouble processing that file. Please try again.',
+          timestamp: new Date().toISOString(),
+          isUser: false,
+          isError: true
+        }
+      ]);
+    }
+  };
+
+  // New function to delete all user data.
+  const deleteUserData = () => {
+    // Clear the user data from state
+    setUserData(null);
+    clearUserData();
+    // Optionally, also remove user data from localStorage if you're persisting it.
+    // localStorage.removeItem('userData');
+  };
+
   return (
     <ChatContext.Provider
       value={{
         conversation,
         loading,
-        sendMessage,
         currentConversationId,
         conversations,
+        userData,
+        setUserData, // Exposing setUserData for other components
+        sendMessage,
         startNewConversation,
         loadExistingConversation,
         deleteCurrentConversation,
-        userData,
-        setUserData
+        processFileWithOCR,
+        deleteUserData // Expose the deleteUserData function
       }}
     >
       {children}
